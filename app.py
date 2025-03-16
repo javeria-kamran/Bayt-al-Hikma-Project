@@ -1,12 +1,15 @@
 import streamlit as st
-from database import add_book, get_all_books, delete_book
+from database import add_book, get_all_books, delete_book, get_session  # Import get_session
 import pandas as pd
 from datetime import date
 import plotly.express as px
 
+# Get the session object
+session = get_session()
+
 def export_books():
     books = get_all_books()
-    data = [{"Title": book.title, "Author": book.author, "Genre": book.genre, "Added On": book.added_on} for book in books]
+    data = [{"Title": book.title, "Author": book.author, "Genre": book.genre, "Added On": book.added_on, "Read": book.read} for book in books]
     df = pd.DataFrame(data)
     return df.to_csv(index=False).encode('utf-8')
 
@@ -97,6 +100,9 @@ with st.sidebar:
     filter_genre = st.selectbox("🔮 Filter by Cosmic Genre", 
                                ["All"] + sorted(list(set(book.genre for book in books))),
                                key="genre_filter")
+    
+    # Search by Book Name
+    search_title = st.text_input("🔍 Search by Book Title")
 
 # Main Content
 col1, col2 = st.columns([1, 2])
@@ -115,23 +121,27 @@ with col1:
         genre = st.selectbox("🌌 Cosmic Category", 
                             ["Fiction", "Non-fiction", "Mystery", "Fantasy", 
                              "Sci-Fi", "Biography", "History", "Other"])
+        read_status = st.checkbox("📖 Mark as Read")
         
         if st.form_submit_button("𓃑 Enshrine in Archive"):
             if title and author:
-                add_book(title, author, genre)
+                add_book(title, author, genre, read_status)
                 st.success(f"🌀 '{title}' has joined the cosmic collection!")
-                st.balloons()
+                # Removed st.balloons()
 
-#Book Display
+# Book Display
 with col2:
     st.markdown("### 𓅰 Celestial Collection")
     
     filtered_books = [book for book in books if filter_genre in ["All", book.genre]]
     
+    if search_title:
+        filtered_books = [book for book in filtered_books if search_title.lower() in book.title.lower()]
+    
     if filtered_books:
         for book in filtered_books:
             with st.container():
-                col1, col2 = st.columns([4, 1])
+                col1, col2, col3 = st.columns([4, 1, 1])
                 with col1:
                     st.markdown(f"""
                         <div class="book-card hover-glow">
@@ -147,6 +157,9 @@ with col2:
                                         <span style="font-size: 0.8em; color: #888;">
                                             𓋹 {book.added_on}
                                         </span>
+                                        <span style="font-size: 0.8em; color: #888;">
+                                            📖 {'Read' if book.read else 'Unread'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -157,6 +170,13 @@ with col2:
                     if st.button("✕", key=f"del_{book.id}"):
                         delete_book(book.id)
                         st.rerun()
+                
+                with col3:
+                    if st.button("📖", key=f"read_{book.id}"):
+                        # Update the read status of the book
+                        book.read = not book.read
+                        session.commit()  # Commit the change to the database
+                        st.rerun()  # Refresh the page to reflect the change
     else:
         st.markdown("""
             <div style="text-align: center; padding: 2rem; color: #666;">
@@ -168,7 +188,7 @@ with col2:
 st.markdown("---")
 st.markdown("### 𓇽 Cosmic Insights")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown(f"""
         <div class="metric-card hover-glow">
@@ -189,11 +209,22 @@ with col2:
     """, unsafe_allow_html=True)
 
 with col3:
+    read_books = sum(book.read for book in books)
     st.markdown(f"""
         <div class="metric-card hover-glow">
-            <div style="font-size: 2em;">🕰️</div>
-            <h3>{pd.to_datetime([book.added_on for book in books]).max().strftime('%Y') if books else 'N/A'}</h3>
-            <p style="color: #aaa;">Current Era</p>
+            <div style="font-size: 2em;">📖</div>
+            <h3>{read_books}</h3>
+            <p style="color: #aaa;">Read Codices</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+with col4:
+    unread_books = len(books) - read_books
+    st.markdown(f"""
+        <div class="metric-card hover-glow">
+            <div style="font-size: 2em;">📘</div>
+            <h3>{unread_books}</h3>
+            <p style="color: #aaa;">Unread Codices</p>
         </div>
     """, unsafe_allow_html=True)
 
